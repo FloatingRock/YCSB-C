@@ -7,7 +7,7 @@
 
 #include <iostream>
 #include <string>
-#include "redis/hiredis/hiredis.h"
+#include <hiredis.h>
 
 namespace ycsbc {
 
