@@ -6,10 +6,9 @@ Yahoo! Cloud Serving Benchmark in C++, a C++ version of YCSB (https://github.com
 
 To build YCSB-C on Ubuntu, for example:
 
-```
-$ mkdir build; cd build
-$ cmake ..
-$ make
+```bash
+$ cmake -S . -B build
+$ cmake --build build
 ```
 
 Run Workload A with a [TBB](https://www.threadingbuildingblocks.org)-based
