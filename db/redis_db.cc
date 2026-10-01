@@ -11,6 +11,20 @@ using namespace std;
 
 namespace ycsbc {
 
+thread_local RedisClient *RedisDB::tls_client_ = nullptr;
+
+RedisClient *RedisDB::GetRedisClient() {
+  if (!tls_client_) {
+    tls_client_ = new RedisClient(host_.c_str(), port_, slaves_);
+  }
+  return tls_client_;
+}
+
+void RedisDB::Close() {
+  delete tls_client_;
+  tls_client_ = nullptr;
+}
+
 int RedisDB::Read(const string &table, const string &key,
          const vector<string> *fields,
          vector<KVPair> &result) {
@@ -25,7 +39,7 @@ int RedisDB::Read(const string &table, const string &key,
       argv[++i] = f.data(); argvlen[i] = f.size();
     }
     assert(i == argc - 1);
-    redisReply *reply = redis_.CommandArgv(argc, argv, argvlen);
+    redisReply *reply = GetRedisClient()->CommandArgv(argc, argv, argvlen);
     assert(reply->type == REDIS_REPLY_ARRAY);
     assert(fields->size() == reply->elements);
     for (size_t i = 0; i < reply->elements; ++i) {
@@ -36,7 +50,7 @@ int RedisDB::Read(const string &table, const string &key,
   } else {
     const char *argv[] = {"HGETALL", key.c_str()};
     size_t argvlen[] = {strlen(argv[0]), key.length()};
-    redisReply *reply = redis_.CommandArgv(2, argv, argvlen);
+    redisReply *reply = GetRedisClient()->CommandArgv(2, argv, argvlen);
     assert(reply->type == REDIS_REPLY_ARRAY);
     for (size_t i = 0; i < reply->elements / 2; ++i) {
       result.push_back(make_pair(
@@ -65,7 +79,7 @@ int RedisDB::Update(const string &table, const string &key,
     cmd.append(" ").append(p.second);
   }
   assert(cmd.length() == len);
-  redis_.Command(cmd);
+  GetRedisClient()->Command(cmd);
   return DB::kOK;
 }
 

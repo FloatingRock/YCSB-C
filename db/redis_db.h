@@ -22,8 +22,10 @@ namespace ycsbc {
 class RedisDB : public DB {
  public:
   RedisDB(const char *host, int port, int slaves) :
-      redis_(host, port, slaves) {
+      host_(host), port_(port), slaves_(slaves) {
   }
+
+  void Close() override;
 
   int Read(const std::string &table, const std::string &key,
            const std::vector<std::string> *fields,
@@ -45,12 +47,21 @@ class RedisDB : public DB {
 
   int Delete(const std::string &table, const std::string &key) {
     std::string cmd("DEL " + key);
-    redis_.Command(cmd);
+    GetRedisClient()->Command(cmd);
     return DB::kOK;
   }
 
  private:
-  RedisClient redis_;
+  // Returns the calling thread's hiredis context, creating it on first use.
+  // Each benchmark thread talks to the server over its own TCP connection
+  // instead of sharing a single context, so transactions from different
+  // threads no longer serialize on one connection.
+  RedisClient *GetRedisClient();
+
+  std::string host_;
+  int port_;
+  int slaves_;
+  static thread_local RedisClient *tls_client_;
 };
 
 } // ycsbc

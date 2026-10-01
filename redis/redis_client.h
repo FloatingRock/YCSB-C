@@ -6,7 +6,6 @@
 #define YCSB_C_REDIS_CLIENT_H_
 
 #include <iostream>
-#include <mutex>
 #include <string>
 #include <hiredis.h>
 
@@ -27,8 +26,6 @@ class RedisClient {
 
   redisContext *context_;
   int slaves_;
-  // A single hiredis context is shared by all benchmark threads.
-  std::mutex mutex_;
 };
 
 //
@@ -49,14 +46,12 @@ inline RedisClient::RedisClient(const char *host, int port, int slaves) :
 }
 
 inline RedisClient::~RedisClient() {
-  std::lock_guard<std::mutex> lock(mutex_);
   if (context_) {
     redisFree(context_);
   }
 }
 
 inline int RedisClient::Command(std::string cmd) {
-  std::lock_guard<std::mutex> lock(mutex_);
   redisReply *reply = nullptr;
   if (redisAppendCommand(context_, cmd.data()) == REDIS_ERR) {
     HandleError(reply, cmd.c_str());
@@ -81,7 +76,6 @@ inline int RedisClient::Command(std::string cmd) {
 
 inline redisReply *RedisClient::CommandArgv(int argc, const char **argv,
                                              const size_t *argvlen) {
-  std::lock_guard<std::mutex> lock(mutex_);
   redisReply *reply = static_cast<redisReply *>(
       redisCommandArgv(context_, argc, argv, argvlen));
   if (!reply) {
