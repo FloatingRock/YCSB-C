@@ -6,6 +6,7 @@
 #define YCSB_C_REDIS_CLIENT_H_
 
 #include <iostream>
+#include <mutex>
 #include <string>
 #include <hiredis.h>
 
@@ -17,6 +18,8 @@ class RedisClient {
   ~RedisClient();
 
   int Command(std::string cmd);
+  redisReply *CommandArgv(int argc, const char **argv,
+                          const size_t *argvlen);
 
   redisContext *context() { return context_; }
  private:
@@ -24,6 +27,8 @@ class RedisClient {
 
   redisContext *context_;
   int slaves_;
+  // A single hiredis context is shared by all benchmark threads.
+  std::mutex mutex_;
 };
 
 //
@@ -44,22 +49,28 @@ inline RedisClient::RedisClient(const char *host, int port, int slaves) :
 }
 
 inline RedisClient::~RedisClient() {
+  std::lock_guard<std::mutex> lock(mutex_);
   if (context_) {
     redisFree(context_);
   }
 }
 
 inline int RedisClient::Command(std::string cmd) {
-  redisReply *reply;
-  redisAppendCommand(context_, cmd.data());
-  if (slaves_) {
-    redisAppendCommand(context_, "WAIT %d %d", slaves_, 0);
+  std::lock_guard<std::mutex> lock(mutex_);
+  redisReply *reply = nullptr;
+  if (redisAppendCommand(context_, cmd.data()) == REDIS_ERR) {
+    HandleError(reply, cmd.c_str());
+  }
+  if (slaves_ &&
+      redisAppendCommand(context_, "WAIT %d %d", slaves_, 0) == REDIS_ERR) {
+    HandleError(reply, "WAIT");
   }
   if (redisGetReply(context_, (void **)&reply) == REDIS_ERR) {
     HandleError(reply, cmd.c_str());
   }
   freeReplyObject(reply);
   if (slaves_) {
+    reply = nullptr;
     if (redisGetReply(context_, (void **)&reply) == REDIS_ERR) {
       HandleError(reply, "WAIT");
     }
@@ -68,11 +79,23 @@ inline int RedisClient::Command(std::string cmd) {
   return 0;
 }
 
+inline redisReply *RedisClient::CommandArgv(int argc, const char **argv,
+                                             const size_t *argvlen) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  redisReply *reply = static_cast<redisReply *>(
+      redisCommandArgv(context_, argc, argv, argvlen));
+  if (!reply) {
+    HandleError(reply, "Redis command");
+  }
+  return reply;
+}
+
 inline void RedisClient::HandleError(redisReply *reply, const char *hint) {
   std::cerr << hint << " error: " << context_->errstr << std::endl;
   if (reply) freeReplyObject(reply);
   redisFree(context_);
-  exit(2); 
+  context_ = nullptr;
+  exit(2);
 }
 
 } // namespace ycsbc
